@@ -63,13 +63,17 @@ export class FileService {
     value: string,
     showHidden = false,
     foldersFirst = true,
+    sortBy: "name" | "modified" = "name",
   ): Promise<Entry[]> {
     const uri = await this.validate(value);
     const entries = await vscode.workspace.fs.readDirectory(uri);
     const visible = await visibleNames(uri, entries);
     const result = await Promise.all(
       entries
-        .filter(([name]) => visible.has(name) && (showHidden || !name.startsWith(".")))
+        .filter(
+          ([name]) =>
+            visible.has(name) && (showHidden || !name.startsWith(".")),
+        )
         .map(async ([name, type]) => {
           const child = vscode.Uri.joinPath(uri, name);
           if (type & vscode.FileType.SymbolicLink) {
@@ -83,7 +87,20 @@ export class FileService {
               /* Show unavailable links; selection reports the error. */
             }
           }
+          let modified: number | undefined;
+          if (sortBy === "modified") {
+            try {
+              modified = (
+                await vscode.workspace.fs.stat(
+                  await this.validate(child.toString()),
+                )
+              ).mtime;
+            } catch {
+              modified = -1;
+            }
+          }
           return {
+            modified,
             uri: child.toString(),
             name,
             directory: !!(type & vscode.FileType.Directory),
@@ -94,6 +111,7 @@ export class FileService {
     return result.sort(
       (a, b) =>
         (foldersFirst ? Number(b.directory) - Number(a.directory) : 0) ||
+        (sortBy === "modified" ? (b.modified ?? -1) - (a.modified ?? -1) : 0) ||
         a.name.localeCompare(b.name, "ko", {
           numeric: true,
           sensitivity: "base",

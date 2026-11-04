@@ -5,7 +5,8 @@ Marketplace 게시자: **magon8696**
 
 ## 배포 파일
 
-- [FinderView-0.2.0.vsix](vsix/FinderView-0.2.0.vsix): 최신 업데이트용 패키지 — 드래그 가져오기·이동·이름 변경·휴지통·충돌 처리.
+- [FinderView-0.2.1.vsix](vsix/FinderView-0.2.1.vsix): 최신 업데이트 — 외부 파일 Shift 드롭, 폴더 클릭 토글, 우클릭 삭제, 최근 수정순 정렬.
+- [FinderView-0.2.0.vsix](vsix/FinderView-0.2.0.vsix): 파일 관리 기능 최초 추가 버전.
 - [FinderView-0.1.5.vsix](vsix/FinderView-0.1.5.vsix): 최초 제출 패키지 보관본.
 - [SHA256SUMS](SHA256SUMS): 패키지의 SHA-256 체크섬입니다.
 - [publisher-logo-128.png](publisher-logo-128.png): 게시자 프로필용 128×128 PNG 로고입니다.
@@ -19,7 +20,7 @@ GitHub에서 위 VSIX 링크를 연 뒤 **Download raw file**로 다운로드합
 VS Code에서 확장 탭 → `⋯` → **Install from VSIX…** → 다운로드한 파일을 선택합니다. 또는 터미널에서 실행합니다.
 
 ```sh
-code --install-extension FinderView-0.2.0.vsix
+code --install-extension FinderView-0.2.1.vsix
 ```
 
 로컬 소스를 빌드하거나 Node.js를 설치하지 않고도 VSIX를 설치할 수 있습니다. 설치 후 명령 팔레트에서 **FinderView: Open**을 실행하거나 에디터 오른쪽 위 FinderView 로고를 클릭합니다.
@@ -29,7 +30,7 @@ code --install-extension FinderView-0.2.0.vsix
 1. [게시자 관리 페이지](https://marketplace.visualstudio.com/manage)에 게시자 계정으로 로그인합니다.
 2. **JiHun Choi (magon8696)** 게시자를 선택합니다.
 3. **New extension → Visual Studio Code**를 선택합니다.
-4. 최신 `FinderView-0.2.0.vsix`를 업로드하고 **Upload**를 클릭합니다.
+4. 최신 `FinderView-0.2.1.vsix`를 업로드하고 **Upload**를 클릭합니다.
 5. `Verifying` 상태가 끝나는지 확인합니다. 오류가 있으면 상세 메시지를 확인합니다.
 6. 검증·게시 및 검색 반영 후 VS Code 확장 탭에서 `FinderView` 또는 아래 ID를 검색합니다.
 
@@ -39,7 +40,7 @@ code --install-extension FinderView-0.2.0.vsix
 
 Marketplace 주소: https://marketplace.visualstudio.com/items?itemName=magon8696.finderview
 
-0.1.5는 이미 제출한 버전입니다. 현재 0.2.0은 기존 FinderView 항목의 **Update** 메뉴로 올립니다. GitHub에 푸시하는 것만으로 Marketplace가 자동 업데이트되지는 않습니다.
+0.1.5는 이미 제출한 버전입니다. 현재 0.2.1은 기존 FinderView 항목의 **Update** 메뉴로 올립니다. GitHub에 푸시하는 것만으로 Marketplace가 자동 업데이트되지는 않습니다.
 
 ## 수정 후 새 버전 만들기
 
@@ -57,7 +58,7 @@ npm test
 npm run package
 ```
 
-버전이 `0.2.1`이라면 프로젝트 루트에 `finderview-0.2.1.vsix`가 생성됩니다. 생성된 파일을 이 폴더에 보관합니다.
+버전이 `0.2.2`이라면 프로젝트 루트에 `finderview-0.2.2.vsix`가 생성됩니다. 생성된 파일을 이 폴더에 보관합니다.
 
 ```sh
 release_version=$(node -p "require('./package.json').version")

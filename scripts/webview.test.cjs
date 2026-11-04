@@ -186,3 +186,102 @@ test('external file drop stages exact binary bytes before committing the import'
   h.render({ type: 'operationResult', requestId: message.requestId, ok: true });
   await new Promise(setImmediate);
 });
+
+test('folder clicks request toggle but keyboard Right only requests expansion', () => {
+  const h = harness(), folder = entry('폴더', true);
+  h.render(state([folder]));
+  h.elements.get('columns').querySelector('.entry').fire('click');
+  assert.equal(h.messages.at(-1).type, 'select');
+  assert.equal(h.messages.at(-1).toggle, true);
+  h.render(state([folder], { columns: [
+    { uri: root, name: 'root', entries: [folder], selected: folder.uri },
+    { uri: folder.uri, name: folder.name, entries: [] },
+  ] }));
+  h.elements.get('columns').querySelector('.entry').fire('click');
+  assert.equal(h.messages.at(-1).toggle, true, 'Clicking the open folder must request collapse');
+  h.render(state([folder], { columns: [
+    { uri: root, name: 'root', entries: [folder], selected: folder.uri, collapsed: true },
+  ] }));
+  h.elements.get('columns').querySelector('.entry').fire('keydown', { key: 'ArrowRight' });
+  assert.equal(h.messages.at(-1).toggle, false, 'Right arrow expands without toggling a folder closed');
+  assert.equal(h.messages.filter(message => message.type === 'external').length, 0);
+});
+
+const fakeDropFile = (name, content) => {
+  const bytes = Uint8Array.from(content);
+  return { name, size: bytes.length, slice(start, end) {
+    return { async arrayBuffer() { return bytes.slice(start, end).buffer; } };
+  } };
+};
+async function acknowledgeUpload(h) {
+  const seen = [];
+  for (let tick = 0; tick < 40; tick++) {
+    await new Promise(setImmediate);
+    const operation = h.messages.filter(message => message.type === 'operation')[seen.length];
+    if (!operation) continue;
+    seen.push(operation);
+    h.render({ type: 'operationResult', requestId: operation.requestId, ok: true,
+      ...(operation.action === 'upload-start' ? { uploadId: 'captured-upload' } : {}),
+    });
+    if (operation.action === 'upload-finish') { await new Promise(setImmediate); return seen; }
+  }
+  assert.fail('Expected staged upload to finish');
+}
+
+test('native File items are captured synchronously and dropped into the hovered folder', async () => {
+  const h = harness(), folder = entry('목적 폴더', true);
+  h.render(state([folder]));
+  let protectedStoreOpen = true, captured = 0;
+  const file = fakeDropFile('외부 파일 #.pdf', [0, 255, 2]);
+  h.elements.get('columns').querySelector('.entry').fire('drop', {
+    shiftKey: true, stopPropagation() {}, dataTransfer: {
+      getData() { return ''; }, files: [], items: [{ kind: 'file',
+        webkitGetAsEntry() { return null; },
+        getAsFile() { assert.equal(protectedStoreOpen, true, 'File must be captured during the drop event'); captured++; return file; },
+      }],
+    },
+  });
+  protectedStoreOpen = false;
+  assert.equal(captured, 1);
+  const operations = await acknowledgeUpload(h);
+  assert.equal(operations[0].target, folder.uri);
+  const chunk = operations.find(message => message.action === 'upload-chunk');
+  assert.equal(chunk.relativePath, file.name);
+  assert.deepEqual(Buffer.from(chunk.data, 'base64'), Buffer.from([0, 255, 2]));
+});
+
+test('mixed directory and standalone File drops preserve both and empty directories', async () => {
+  const h = harness(), destination = entry('목적 폴더', true);
+  h.render(state([destination]));
+  const nestedFile = fakeDropFile('안쪽 파일.txt', [97, 98, 99]);
+  const standalone = fakeDropFile('바깥 파일.bin', [0, 255]);
+  let readBatch = false, protectedStoreOpen = true, standaloneCaptured = false;
+  const emptyDirectory = { name: '빈 폴더', isDirectory: true, createReader() {
+    return { readEntries(resolve) { resolve([]); } };
+  } };
+  const directoryEntry = { name: '가져온 폴더', isDirectory: true, createReader() {
+    return { readEntries(resolve) {
+      if (readBatch) resolve([]);
+      else { readBatch = true; resolve([emptyDirectory, { name: nestedFile.name, isFile: true, file(resolve) { resolve(nestedFile); } }]); }
+    } };
+  } };
+  h.elements.get('columns').querySelector('.entry').fire('drop', {
+    shiftKey: true, stopPropagation() {}, dataTransfer: {
+      getData() { return ''; }, files: [], items: [
+        { kind: 'file', webkitGetAsEntry() { return directoryEntry; } },
+        { kind: 'file', webkitGetAsEntry() { return null; }, getAsFile() {
+          assert.equal(protectedStoreOpen, true, 'Standalone file must be captured before asynchronous directory walking');
+          standaloneCaptured = true; return standalone;
+        } },
+      ],
+    },
+  });
+  protectedStoreOpen = false;
+  assert.equal(standaloneCaptured, true);
+  const operations = await acknowledgeUpload(h);
+  assert.equal(operations[0].target, destination.uri);
+  const chunks = operations.filter(message => message.action === 'upload-chunk');
+  assert.deepEqual(chunks.filter(message => message.directory).map(message => message.relativePath), ['가져온 폴더', '가져온 폴더/빈 폴더']);
+  assert.deepEqual(chunks.filter(message => !message.directory).map(message => message.relativePath), ['가져온 폴더/안쪽 파일.txt', '바깥 파일.bin']);
+  assert.deepEqual(Buffer.from(chunks.find(message => message.relativePath === '바깥 파일.bin').data, 'base64'), Buffer.from([0, 255]));
+});

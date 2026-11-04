@@ -24,12 +24,12 @@
     if (text !== undefined) el.textContent = text;
     return el;
   };
-  const select = (entry, column) => {
+  const select = (entry, column, toggle = false) => {
     focusUri = entry.uri;
     selectedUris = new Set([entry.uri]);
     anchor = { uri: entry.uri, column };
     updateSelection();
-    post({ type: "select", uri: entry.uri, column });
+    post({ type: "select", uri: entry.uri, column, toggle });
   };
   const formatSize = (size) => {
     if (!Number.isFinite(size)) return "";
@@ -99,7 +99,12 @@
     $("roots").value = next.root || "";
     $("roots").hidden = next.roots.length < 2;
     $("hidden").checked = !!next.showHidden;
-    $("sort").value = next.foldersFirst ? "folders" : "name";
+    $("sort").value =
+      next.sortBy === "modified"
+        ? "modified"
+        : next.foldersFirst
+          ? "folders"
+          : "name";
     $("activity").textContent =
       next.operationBusy || localBusy
         ? "파일 작업 중…"
@@ -132,8 +137,8 @@
       list.setAttribute("role", "listbox");
       list.setAttribute("aria-label", column.name);
       list.setAttribute("aria-multiselectable", "true");
-      installDropTarget(list, column.uri);
-      installDropTarget(header, column.uri);
+      installDropTarget(list, column.uri, column.name);
+      installDropTarget(header, column.uri, column.name);
       if (!column.entries.length)
         list.append(
           node(
@@ -172,7 +177,12 @@
         else if (/^[a-z0-9]+$/.test(extension)) icon.classList.add(extension);
         icon.setAttribute("aria-hidden", "true");
         button.append(icon, node("span", "filename", entry.name));
-        if (entry.directory) button.append(node("span", "arrow", "›"));
+        if (entry.directory) {
+          const expanded = next.columns[index + 1]?.uri === entry.uri;
+          button.setAttribute("aria-expanded", String(expanded));
+          button.title = `${entry.name} · 클릭: 펼치기/접기 · 외부 파일: Shift를 누른 채 여기에 놓기`;
+          button.append(node("span", "arrow", expanded ? "⌄" : "›"));
+        }
         button.addEventListener("click", (event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey) {
             lastClick = undefined;
@@ -190,7 +200,7 @@
               : { uri: entry.uri, time: now };
           if (doubleClick && !entry.directory)
             post({ type: "external", uri: entry.uri });
-          else select(entry, index);
+          else select(entry, index, true);
         });
         button.addEventListener("dragstart", (event) => {
           if (state.operationBusy || localBusy) {
@@ -214,7 +224,7 @@
           lastClick = undefined;
           clearDropHighlights();
         });
-        if (entry.directory) installDropTarget(button, entry.uri);
+        if (entry.directory) installDropTarget(button, entry.uri, entry.name);
         button.addEventListener("contextmenu", (event) =>
           showContext(event, entry.uri),
         );
@@ -284,11 +294,8 @@
     $("selection-count").textContent = selectedUris.size
       ? `${selectedUris.size}개 선택`
       : "";
-    $("add-files").disabled = busy || !currentDirectory();
-    $("move-files").disabled = busy || !selectedUris.size;
-    $("trash-files").disabled = busy || !selectedUris.size;
     for (const button of menu.querySelectorAll("button")) {
-      if (["move", "rename", "trash"].includes(button.dataset.action))
+      if (["add", "move", "rename", "trash"].includes(button.dataset.action))
         button.disabled = busy;
     }
     for (const row of columns.querySelectorAll(".entry")) {
@@ -359,7 +366,7 @@
     for (const target of columns.querySelectorAll(".drop-target"))
       target.className = target.className.replace(/\s*drop-target\b/g, "");
   }
-  function installDropTarget(element, target) {
+  function installDropTarget(element, target, name) {
     element.addEventListener("dragover", (event) => {
       if (state.operationBusy || localBusy) return;
       const types = Array.from(event.dataTransfer?.types || []);
@@ -378,6 +385,8 @@
         : "copy";
       clearDropHighlights();
       element.classList.add("drop-target");
+      $("activity").textContent =
+        `${name || state.columns.at(-1)?.name || "현재 폴더"}에 ${event.dataTransfer.dropEffect === "move" ? "이동" : "복사"}`;
     });
     element.addEventListener("dragleave", (event) => {
       if (!element.contains?.(event.relatedTarget))
@@ -417,10 +426,21 @@
       const items = Array.from(transfer?.items || []).filter(
         (item) => item.kind === "file",
       );
-      const roots = items
-        .map((item) => item.webkitGetAsEntry?.())
-        .filter(Boolean);
-      const files = Array.from(transfer?.files || []);
+      const roots = [];
+      const files = [];
+      const fallbackFiles = Array.from(transfer?.files || []);
+      // Capture each File synchronously while the drop's data store is readable.
+      // Mixed files/directories must not lose files when one entry API is absent.
+      items.forEach((item, index) => {
+        const entry = item.webkitGetAsEntry?.();
+        if (entry?.isDirectory) roots.push(entry);
+        else {
+          const file = item.getAsFile?.() || fallbackFiles[index];
+          if (file) files.push(file);
+          else if (entry) roots.push(entry);
+        }
+      });
+      if (!items.length) files.push(...fallbackFiles);
       if (roots.length || files.length) {
         void importDrop(destination, roots, files);
         return;
@@ -432,7 +452,7 @@
         void perform("transfer", { uris, target: destination, copy: true });
       else
         showError(
-          "이 항목을 가져올 수 없습니다. 파일 추가 버튼으로 선택하세요.",
+          "이 항목을 가져올 수 없습니다. Shift를 누른 채 놓거나 우클릭 → 파일 추가를 사용하세요.",
         );
     });
   }
@@ -477,10 +497,9 @@
           throw new Error("한 번에 추가할 수 있는 파일 총 크기는 1GB입니다.");
         entries.push(entry);
       };
-      if (roots.length) {
-        for (const root of roots)
-          for await (const entry of walkDrop(root)) add(entry);
-      } else for (const file of files) add({ relativePath: file.name, file });
+      for (const root of roots)
+        for await (const entry of walkDrop(root)) add(entry);
+      for (const file of files) add({ relativePath: file.name, file });
       ({ uploadId } = await requestOperation("upload-start", { target }));
       let completed = 0;
       for (const entry of entries) {
@@ -607,30 +626,29 @@
     post({ type: "root", uri: event.target.value }),
   );
   $("refresh").addEventListener("click", () => post({ type: "refresh" }));
-  $("add-files").addEventListener(
-    "click",
-    () => void perform("add", { target: currentDirectory() }),
-  );
-  $("move-files").addEventListener(
-    "click",
-    () => void perform("move", { uris: [...selectedUris] }),
-  );
-  $("trash-files").addEventListener(
-    "click",
-    () => void perform("trash", { uris: [...selectedUris] }),
-  );
   const options = () =>
     post({
       type: "options",
       showHidden: $("hidden").checked,
       foldersFirst: $("sort").value === "folders",
+      sortBy: $("sort").value === "modified" ? "modified" : "name",
     });
   $("hidden").addEventListener("change", options);
   $("sort").addEventListener("change", options);
   menu.addEventListener("click", (event) => {
     const action = event.target.dataset.action;
     if (action && contextUri) {
-      if (["move", "trash", "rename"].includes(action)) {
+      if (action === "add") {
+        const parent = state.columns.find((column) =>
+          column.entries.some((entry) => entry.uri === contextUri),
+        );
+        const entry = parent?.entries.find((entry) => entry.uri === contextUri);
+        void perform("add", {
+          target: entry?.directory
+            ? entry.uri
+            : parent?.uri || currentDirectory(),
+        });
+      } else if (["move", "trash", "rename"].includes(action)) {
         const uris =
           action === "rename"
             ? [contextUri]

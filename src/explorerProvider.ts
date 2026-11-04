@@ -19,6 +19,7 @@ export class ExplorerProvider implements vscode.Disposable {
     columns: [],
     showHidden: true,
     foldersFirst: true,
+    sortBy: "name",
     busy: false,
   };
   private disposables: vscode.Disposable[] = [];
@@ -136,15 +137,23 @@ export class ExplorerProvider implements vscode.Disposable {
         case "options":
           if (
             typeof message.showHidden !== "boolean" ||
-            typeof message.foldersFirst !== "boolean"
+            typeof message.foldersFirst !== "boolean" ||
+            (message.sortBy !== undefined &&
+              message.sortBy !== "name" &&
+              message.sortBy !== "modified")
           )
             return;
           this.state.showHidden = message.showHidden;
           this.state.foldersFirst = message.foldersFirst;
+          this.state.sortBy = message.sortBy ?? "name";
           await this.refresh();
           break;
         case "select":
-          await this.select(message.uri, message.column);
+          await this.select(
+            message.uri,
+            message.column,
+            message.toggle === true,
+          );
           break;
         case "open":
         case "external":
@@ -298,13 +307,20 @@ export class ExplorerProvider implements vscode.Disposable {
       if (!this.disposed) await this.panel.webview.postMessage(reply);
     }
   }
-  async select(uri: string, index: number) {
+  async select(uri: string, index: number, toggle = false) {
     if (!Number.isInteger(index) || index < 0) return;
     const column = this.state.columns[index];
     const entry = column?.entries.find((e) => e.uri === uri);
     if (!entry) return;
+    const collapse =
+      toggle &&
+      entry.directory &&
+      column.selected === uri &&
+      !column.collapsed &&
+      (this.state.columns[index + 1]?.uri === uri || this.state.busy);
     const token = ++this.revision;
     this.state.columns = this.state.columns.slice(0, index + 1);
+    column.collapsed = collapse;
     column.selected = uri;
     this.state.error = undefined;
     this.state.metadata = undefined;
@@ -312,9 +328,10 @@ export class ExplorerProvider implements vscode.Disposable {
     this.emit();
     try {
       const metadata = await this.files.metadata(uri);
-      const child = entry.directory
-        ? await this.load(uri, entry.name)
-        : undefined;
+      const child =
+        entry.directory && !collapse
+          ? await this.load(uri, entry.name)
+          : undefined;
       if (token !== this.revision) return;
       this.state.metadata = metadata;
       if (child) this.state.columns.push(child);
@@ -391,6 +408,7 @@ export class ExplorerProvider implements vscode.Disposable {
         uri,
         this.state.showHidden,
         this.state.foldersFirst,
+        this.state.sortBy,
       ),
     };
   }
@@ -435,7 +453,9 @@ export class ExplorerProvider implements vscode.Disposable {
             column.selected = undefined;
             break;
           }
-          if (!entry.directory) break;
+          column.collapsed =
+            entry.directory && previous[index]?.collapsed === true;
+          if (!entry.directory || column.collapsed) break;
           uri = entry.uri;
           name = entry.name;
         }

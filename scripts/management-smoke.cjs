@@ -6,7 +6,7 @@ module.exports = async function managementSmoke(frame, page, workspace) {
   const folder = path.join(workspace,'논문 자료','리비전');
   const bytes = [0,255,17,2,92,128];
   try {
-  const waitIdle = async () => { await frame.waitForFunction(()=>document.getElementById('columns').getAttribute('aria-busy')==='false' && !document.getElementById('add-files').disabled); };
+  const waitIdle = async () => { await frame.waitForFunction(()=>document.getElementById('columns').getAttribute('aria-busy')==='false'); };
   const drop = async (name, content) => {
     await frame.evaluate(({name,content}) => {
       const transfer = new DataTransfer();
@@ -53,14 +53,47 @@ module.exports = async function managementSmoke(frame, page, workspace) {
   await row('세 번째').click();
   await row('이름 변경 #.txt').waitFor();
   await row('이름 변경 #.txt').click({button:'right'});
+  assert.match(await frame.locator('#context [data-action="trash"]').textContent(),/삭제/);
   await frame.locator('#context [data-action="trash"]').click();
   await waitIdle();
   assert.deepEqual([...await fs.readFile(path.join(folder,'세 번째','이름 변경 #.txt'))],bytes);
   await row('이름 변경 #.txt').click({button:'right'});
+  assert.match(await frame.locator('#context [data-action="trash"]').textContent(),/삭제/);
   await frame.locator('#context [data-action="trash"]').click();
   await waitIdle();
   await assert.rejects(fs.access(path.join(folder,'세 번째','이름 변경 #.txt')));
   assert.equal(await row('이름 변경 #.txt').count(),0);
+  assert.equal(await frame.locator('#add-files, #move-files, #trash-files').count(),0,'Top file-management buttons are removed');
+  assert.match(await frame.locator('.actions .drop-help').textContent(),/Shift/,'Shift hint replaces the toolbar file buttons');
+  await row('논문 자료').click();
+  await frame.waitForFunction(()=>document.querySelectorAll('#columns .column').length===1 && document.getElementById('columns').getAttribute('aria-busy')==='false');
+  await frame.locator('#refresh').click();await waitIdle();
+  assert.equal(await frame.locator('#columns .column').count(),1,'Refresh keeps the folder collapsed');
+  await row('논문 자료').click();
+  await frame.waitForFunction(()=>document.querySelectorAll('#columns .column').length===2 && document.getElementById('columns').getAttribute('aria-busy')==='false');
+  await frame.evaluate(()=>{const el=document.getElementById('columns');el.style.scrollBehavior='auto';el.scrollLeft=0;});
+  await row('다른 폴더').scrollIntoViewIfNeeded();
+  const nativeSource=path.join(path.dirname(workspace),'outside','외부 실제 드래그 #.txt');
+  const nativeBytes=Buffer.from([5,255,0,81,90]);await fs.writeFile(nativeSource,nativeBytes);
+  await frame.evaluate(()=>document.addEventListener('drop',event=>{globalThis.nativeDropReceipt={trusted:event.isTrusted,shift:event.shiftKey,files:event.dataTransfer?.files.length,types:Array.from(event.dataTransfer?.types||[])};},{capture:true,once:true}));
+  const bounds=await row('다른 폴더').boundingBox();
+  const session=await page.context().newCDPSession(page);
+  const drag={x:bounds.x+Math.min(60,bounds.width/2),y:bounds.y+bounds.height/2,modifiers:8,data:{items:[],files:[nativeSource],dragOperationsMask:1}};
+  for(const type of ['dragEnter','dragOver','dragOver','drop']) await session.send('Input.dispatchDragEvent',{type,...drag});
+  const nativeDestination=path.join(workspace,'다른 폴더','외부 실제 드래그 #.txt');
+  const nativeDeadline=Date.now()+8000;
+  while(true) {try{assert.deepEqual(await fs.readFile(nativeDestination),nativeBytes);break;}catch(error){if(Date.now()>nativeDeadline){console.error('Native drag receipt',await frame.evaluate(()=>globalThis.nativeDropReceipt));throw error;}await new Promise(resolve=>setTimeout(resolve,50));}}
+  assert.deepEqual(await fs.readFile(nativeSource),nativeBytes,'External drop copies without changing the source');
+  const receipt=await frame.evaluate(()=>globalThis.nativeDropReceipt);
+  assert.equal(receipt.trusted,true,'Drop must route through native Chromium input, not dispatchEvent');
+  assert.equal(receipt.shift,true);
+  await waitIdle();
+  await row('다른 폴더').click();
+  await row('외부 실제 드래그 #.txt').waitFor();
+  await frame.locator('#sort').selectOption('modified');
+  await frame.waitForFunction(()=>document.getElementById('sort').value==='modified' && document.getElementById('columns').getAttribute('aria-busy')==='false');
+  assert.equal(await frame.locator('.column').first().locator('.filename').first().textContent(),'다른 폴더','Recently changed target folder sorts first');
+  console.log('PASS native external drop with Shift onto a closed folder: exact destination and binary bytes, source preserved; click collapse/expand and refresh verified');
   const artifact=path.resolve(__dirname,'../artifacts/finderview-file-management.png');
   await page.screenshot({path:artifact});
   console.log('PASS real file-management UI: external binary drop, rename input, collision rename/overwrite, multi-select internal drag move, trash cancellation and confirmed trash');

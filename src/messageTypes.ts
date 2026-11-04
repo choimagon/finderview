@@ -3,12 +3,14 @@ export interface Entry {
   name: string;
   directory: boolean;
   extension: string;
+  modified?: number;
 }
 export interface Column {
   uri: string;
   name: string;
   entries: Entry[];
   selected?: string;
+  collapsed?: boolean;
   error?: string;
 }
 export interface Metadata {
@@ -25,6 +27,7 @@ export interface ExplorerState {
   metadata?: Metadata;
   showHidden: boolean;
   foldersFirst: boolean;
+  sortBy?: "name" | "modified";
   busy: boolean;
   operationBusy?: boolean;
   error?: string;
@@ -55,6 +58,11 @@ export type ClientMessage =
   | OperationMessage
   | { type: "ready" | "refresh" }
   | { type: "root"; uri: string }
-  | { type: "select"; uri: string; column: number }
+  | { type: "select"; uri: string; column: number; toggle?: boolean }
   | { type: "open" | "external" | "reveal" | "copy"; uri: string }
-  | { type: "options"; showHidden: boolean; foldersFirst: boolean };
+  | {
+      type: "options";
+      showHidden: boolean;
+      foldersFirst: boolean;
+      sortBy?: "name" | "modified";
+    };

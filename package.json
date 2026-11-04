@@ -2,7 +2,7 @@
   "name": "finderview",
   "displayName": "FinderView",
   "description": "Explore your workspace in Finder-style Miller columns.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "magon8696",
   "license": "MIT",
   "engines": {

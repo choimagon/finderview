@@ -29,6 +29,17 @@ exports.run = async function run() {
   assert.ok(gitVisible.some(entry => entry.name === 'ignored-keep.txt'));
   await explorerConfig.update('excludeGitIgnore', false, vscode.ConfigurationTarget.WorkspaceFolder);
   console.log('PASS Explorer visibility: files.exclude, sibling rules, Git ignore setting and negation, macOS hidden flag remains visible');
+  const sortFolder=vscode.Uri.joinPath(root,'최근순 검증');
+  await fs.mkdir(sortFolder.fsPath);
+  await fs.writeFile(vscode.Uri.joinPath(sortFolder,'a-old.txt').fsPath,'old');
+  await fs.writeFile(vscode.Uri.joinPath(sortFolder,'z-new.txt').fsPath,'new');
+  await fs.mkdir(vscode.Uri.joinPath(sortFolder,'middle-folder').fsPath);
+  for(const [name,year] of [['a-old.txt',2010],['middle-folder',2020],['z-new.txt',2030]]) {
+    const time=new Date(`${year}-01-01T00:00:00Z`);await fs.utimes(vscode.Uri.joinPath(sortFolder,name).fsPath,time,time);
+  }
+  assert.deepEqual((await service.list(sortFolder.toString(),true,false,'modified')).map(entry=>entry.name),['z-new.txt','middle-folder','a-old.txt'],'Recent sort uses descending modification time across files and folders');
+  assert.deepEqual((await service.list(sortFolder.toString(),true,false,'name')).map(entry=>entry.name),['a-old.txt','middle-folder','z-new.txt']);
+  console.log('PASS recent sorting: filesystem mtimes, newest first including folders, name sort unchanged');
   const firstFile = rootEntries.findIndex(entry => !entry.directory);
   assert.ok(rootEntries.slice(firstFile).every(entry => !entry.directory), 'Folders must precede files');
   const sortedNames = (await service.list(root.toString(), false, false)).map(entry => entry.name);
@@ -63,6 +74,25 @@ exports.run = async function run() {
   try {
     await provider.receive({ type: 'ready' });
     assert.equal(provider.state.columns.length, 1);
+    const toggleFolder=provider.state.columns[0].entries.find(item=>item.name==='논문 자료');
+    await provider.receive({type:'select',uri:toggleFolder.uri,column:0,toggle:true});
+    assert.equal(provider.state.columns.length,2);
+    await provider.receive({type:'select',uri:toggleFolder.uri,column:0,toggle:true});
+    assert.equal(provider.state.columns.length,1,'Second click collapses the folder');
+    await provider.refresh();
+    assert.equal(provider.state.columns.length,1,'Refresh must preserve collapsed state');
+    await provider.receive({type:'select',uri:toggleFolder.uri,column:0,toggle:true});
+    assert.equal(provider.state.columns.length,2,'Third click expands the folder');
+    await provider.receive({type:'select',uri:toggleFolder.uri,column:0,toggle:true});
+    const originalToggleMetadata=provider.files.metadata.bind(provider.files);
+    let releaseToggle;
+    const toggleGate=new Promise(resolve=>{releaseToggle=resolve;});
+    provider.files.metadata=async value=>{if(value===toggleFolder.uri)await toggleGate;return originalToggleMetadata(value);};
+    const pendingOpen=provider.select(toggleFolder.uri,0,true);
+    const pendingClose=provider.select(toggleFolder.uri,0,true);
+    releaseToggle();await Promise.all([pendingOpen,pendingClose]);
+    assert.equal(provider.state.columns.length,1,'Rapid second click cancels pending expansion');
+    provider.files.metadata=originalToggleMetadata;
     for (const [index, name] of ['논문 자료', '리비전', '세 번째'].entries()) {
       const entry = provider.state.columns[index].entries.find(item => item.name === name);
       await provider.receive({ type: 'select', uri: entry.uri, column: index });

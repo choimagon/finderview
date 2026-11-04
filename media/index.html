@@ -32,11 +32,11 @@
       </div>
       <div class="actions">
         <select id="roots" aria-label="워크스페이스 선택"></select>
-        <button id="add-files" title="현재 폴더에 외부 파일 복사">
-          파일 추가
-        </button>
-        <button id="move-files" disabled>이동</button>
-        <button id="trash-files" disabled>삭제</button>
+        <span
+          class="drop-help"
+          title="외부 파일은 Shift를 누른 채 원하는 폴더 위에 놓으면 복사됩니다."
+          >외부 파일은 <kbd>Shift</kbd> + 드래그</span
+        >
         <span id="selection-count" role="status" aria-live="polite"></span>
         <button
           id="refresh"
@@ -51,6 +51,7 @@
         <select id="sort" aria-label="정렬">
           <option value="folders">폴더 우선 · 이름순</option>
           <option value="name">이름순</option>
+          <option value="modified">최근 수정순</option>
         </select>
       </div>
     </header>
@@ -74,10 +75,16 @@
       </button>
       <button role="menuitem" data-action="copy">경로 복사</button>
       <hr />
+      <button role="menuitem" data-action="add">파일 추가…</button>
       <button role="menuitem" data-action="move">이동…</button>
       <button role="menuitem" data-action="rename">이름 변경…</button>
-      <button role="menuitem" data-action="trash" class="danger">
-        휴지통으로 이동…
+      <button
+        role="menuitem"
+        data-action="trash"
+        class="danger"
+        title="확인 후 휴지통으로 이동"
+      >
+        삭제…
       </button>
     </div>
     <script nonce="{{nonce}}" src="{{scriptUri}}"></script>

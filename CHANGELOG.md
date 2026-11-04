@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1
+
+- Add newest-modified-first sorting for files and folders.
+- Toggle folder expansion on repeated clicks and preserve collapsed state on refresh.
+- Place the external-file Shift-drag hint where file-action toolbar buttons were.
+- Keep add/move/rename/delete actions in the right-click menu; label deletion explicitly.
+- Capture dropped files synchronously and preserve mixed file/folder drops.
+- Verify a trusted native Chromium drop with Shift onto an unopened folder.
+
 ## 0.2.0
 
 - Add desktop file/folder drag-and-drop imports and a native file picker.

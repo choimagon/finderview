@@ -352,3 +352,19 @@ button:disabled {
 #context .danger {
   color: var(--vscode-errorForeground);
 }
+
+.drop-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.drop-help kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font: inherit;
+  color: var(--vscode-editor-foreground);
+}
