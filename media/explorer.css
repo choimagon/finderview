@@ -56,6 +56,12 @@ input:focus-visible {
   letter-spacing: -0.2px;
   white-space: nowrap;
 }
+.brand strong {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
 .brand-mark {
   width: 36px;
   height: 36px;

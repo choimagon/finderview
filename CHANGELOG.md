@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- Increase the FinderView header to 20px with an extra-bold font weight.
+
 ## 0.2.2
 
 - Enlarge the external Shift-drag hint and highlight it with a theme-aware badge and keycap.
