@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Enlarge the external Shift-drag hint and highlight it with a theme-aware badge and keycap.
+
 ## 0.2.1
 
 - Add newest-modified-first sorting for files and folders.

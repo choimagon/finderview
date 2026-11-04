@@ -356,15 +356,23 @@ button:disabled {
 .drop-help {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: var(--vscode-descriptionForeground);
-  font-size: 11px;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-focusBorder, #007fd4) 18%, var(--vscode-editor-background, #1e1e1e));
+  color: var(--vscode-editor-foreground, #dddddd);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
   white-space: nowrap;
 }
 .drop-help kbd {
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--vscode-focusBorder, #007fd4);
+  border-radius: 4px;
+  background: var(--vscode-button-background, #007fd4);
+  color: var(--vscode-button-foreground, #ffffff);
   font: inherit;
-  color: var(--vscode-editor-foreground);
+  font-weight: 700;
 }
