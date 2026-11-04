@@ -1,0 +1,77 @@
+{
+  "name": "finderview",
+  "displayName": "FinderView",
+  "description": "Explore your workspace in Finder-style Miller columns.",
+  "version": "0.1.5",
+  "publisher": "magon8696",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onCommand:columnExplorer.open"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "columnExplorer.open",
+        "title": "FinderView: Open",
+        "icon": {
+          "light": "media/finderview-light.svg",
+          "dark": "media/finderview-dark.svg"
+        }
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "columnExplorer.open",
+          "group": "navigation@1"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --allow-missing-repository",
+    "test": "npm run compile && node --test scripts/webview.test.cjs && node scripts/test.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.95.0",
+    "@vscode/test-electron": "^2.5.0",
+    "@vscode/vsce": "^3.0.0",
+    "playwright-core": "^1.64.1",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "ignore": "^7.0.14",
+    "minimatch": "^11.0.4"
+  },
+  "author": "JiHun Choi",
+  "icon": "media/icon.png",
+  "keywords": [
+    "finder",
+    "column view",
+    "miller columns",
+    "file explorer",
+    "workspace"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/choimagon/finderview.git"
+  },
+  "homepage": "https://github.com/choimagon/finderview#readme",
+  "bugs": {
+    "url": "https://github.com/choimagon/finderview/issues"
+  }
+}
