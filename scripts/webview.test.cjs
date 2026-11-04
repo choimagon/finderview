@@ -37,7 +37,7 @@ function harness() {
   document.getElementById = id => { if (!elements.has(id)) elements.set(id, new Element('div')); return elements.get(id); };
   const window = { addEventListener(name, fn) { this[name] = fn; } };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../media/explorer.js'), 'utf8'), {
-    document, window, acquireVsCodeApi: () => ({ postMessage: message => messages.push(message) }), innerWidth: 1000, innerHeight: 800,
+    setTimeout: () => 0, clearTimeout: () => {}, btoa, document, window, acquireVsCodeApi: () => ({ postMessage: message => messages.push(message) }), innerWidth: 1000, innerHeight: 800,
   });
   return { messages, elements, document, render: state => window.message({ data: state }) };
 }
@@ -103,4 +103,86 @@ test('keyboard moves selection and Enter opens files', () => {
   assert.equal(h.document.activeElement, rows[1]);
   rows[1].fire('keydown', { key: 'Enter' });
   assert.equal(h.messages.at(-1).type, 'external');
+});
+
+
+test('Ctrl and Shift select multiple files, and Cmd+A selects the current column', () => {
+  const h = harness(), files = ['a.txt', 'b.txt', 'c.txt'].map(name => entry(name));
+  h.render(state(files));
+  const rows = h.elements.get('columns').querySelectorAll('.entry');
+  rows[0].fire('click'); rows[1].fire('click', { ctrlKey: true });
+  assert.equal(h.elements.get('selection-count').textContent, '2개 선택');
+  assert.equal(rows[0]['aria-selected'], 'true');
+  assert.equal(rows[1]['aria-selected'], 'true');
+  rows[2].fire('click', { shiftKey: true });
+  assert.equal(h.elements.get('selection-count').textContent, '3개 선택');
+  rows[1].fire('click', { ctrlKey: true });
+  assert.equal(h.elements.get('selection-count').textContent, '2개 선택');
+  rows[0].fire('keydown', { key: 'a', metaKey: true });
+  assert.equal(h.elements.get('selection-count').textContent, '3개 선택');
+  assert.equal(h.messages.filter(message => message.type === 'external').length, 0);
+});
+
+for (const action of ['move', 'rename', 'trash']) {
+  test(`context menu ${action} sends selected URI operation`, () => {
+    const h = harness(), a = entry('한글.txt'), b = entry('두 번째.txt');
+    h.render(state([a, b]));
+    const rows = h.elements.get('columns').querySelectorAll('.entry');
+    rows[0].fire('click'); rows[1].fire('click', { metaKey: true });
+    const menu = h.elements.get('context');
+    menu.append(h.document.createElement('button'));
+    rows[0].fire('contextmenu', { clientX: 0, clientY: 0 });
+    menu.fire('click', { target: { dataset: { action } } });
+    const message = h.messages.at(-1);
+    assert.equal(message.type, 'operation');
+    assert.equal(message.action, action);
+    assert.deepEqual(Array.from(message.uris), action === 'rename' ? [a.uri] : [a.uri, b.uri]);
+    h.render({ type: 'operationResult', requestId: message.requestId, ok: true });
+  });
+}
+
+test('internal drag sends move by default and modifier sends copy to the folder URI', () => {
+  for (const copy of [false, true]) {
+    const h = harness(), file = entry('source.txt'), folder = entry('destination', true);
+    h.render(state([file, folder]));
+    const row = h.elements.get('columns').querySelectorAll('.entry')[1];
+    row.fire('drop', { stopPropagation() {}, altKey: copy, dataTransfer: {
+      getData(type) { return type === 'application/x-finderview-uris' ? JSON.stringify([file.uri]) : ''; },
+    }});
+    const message = h.messages.at(-1);
+    assert.equal(message.action, 'transfer');
+    assert.equal(message.target, folder.uri);
+    assert.equal(message.copy, copy);
+    assert.deepEqual(Array.from(message.uris), [file.uri]);
+    h.render({ type: 'operationResult', requestId: message.requestId, ok: true });
+  }
+});
+
+test('external file drop stages exact binary bytes before committing the import', async () => {
+  const h = harness();
+  h.render(state([]));
+  const bytes = Uint8Array.from([0, 255, 1]);
+  const file = { name: '새 문서.pdf', size: bytes.length, slice(start, end) {
+    return { async arrayBuffer() { return bytes.slice(start, end).buffer; } };
+  }};
+  h.elements.get('columns').querySelector('.entries').fire('drop', {
+    stopPropagation() {}, dataTransfer: { getData() { return ''; }, files: [file], items: [] },
+  });
+  let message = h.messages.at(-1);
+  assert.equal(message.action, 'upload-start');
+  assert.equal(message.target, root);
+  h.render({ type: 'operationResult', requestId: message.requestId, ok: true, uploadId: 'test-upload' });
+  await new Promise(setImmediate);
+  message = h.messages.at(-1);
+  assert.equal(message.action, 'upload-chunk');
+  assert.equal(message.relativePath, file.name);
+  assert.equal(message.offset, 0);
+  assert.deepEqual(Buffer.from(message.data, 'base64'), Buffer.from(bytes));
+  h.render({ type: 'operationResult', requestId: message.requestId, ok: true });
+  await new Promise(setImmediate);
+  message = h.messages.at(-1);
+  assert.equal(message.action, 'upload-finish');
+  assert.equal(message.uploadId, 'test-upload');
+  h.render({ type: 'operationResult', requestId: message.requestId, ok: true });
+  await new Promise(setImmediate);
 });

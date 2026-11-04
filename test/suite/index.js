@@ -57,6 +57,7 @@ exports.run = async function run() {
   assert.ok(vscode.window.visibleTextEditors.some(editor => editor.document.uri.toString() === readme.toString()), 'Text file should open in VS Code');
   assert.deepEqual(await fs.readFile(readme.fsPath), before, 'Opening a file must not modify its contents');
   console.log('PASS FileService: nested/empty directories, all file types, hidden files, sorting, metadata, Unicode/escaping, workspace and symlink boundaries, read-only editor opening');
+  await require('./operations').run(root);
   const noopEvent = () => ({ dispose() {} });
   const provider = new ExplorerProvider({ webview: { onDidReceiveMessage: noopEvent, postMessage: async () => true }, onDidDispose: noopEvent }, vscode.Uri.file(path.resolve(__dirname, '../..')));
   try {
@@ -114,14 +115,23 @@ exports.run = async function run() {
       await fs.writeFile(process.env.COLUMN_EXPLORER_EXTERNAL_LOG, value);
     };
   }
+  // Isolate confirmation decisions from native OS dialog automation. The
+  // operation itself still uses the real filesystem and system Trash.
+  const {FileOperations} = require('../../out/fileOperations');
+  const originalTrash = FileOperations.prototype.trash;
+  let trashInvocation = 0;
+  FileOperations.prototype.trash = async function(values) {
+    this.confirm = async () => ++trashInvocation > 1;
+    return originalTrash.call(this,values);
+  };
   await vscode.commands.executeCommand('columnExplorer.open');
   console.log('PASS Column Explorer command created a real WebviewPanel in the Extension Development Host');
   if (process.env.COLUMN_EXPLORER_UI_READY) {
     await fs.writeFile(process.env.COLUMN_EXPLORER_UI_READY, 'ready');
-    const deadline = Date.now() + 60000;
+    const deadline = Date.now() + 120000;
     while (true) {
       try { await fs.access(process.env.COLUMN_EXPLORER_UI_DONE); break; } catch {}
-      assert.ok(Date.now() < deadline, 'UI smoke runner must complete within 60 seconds');
+      assert.ok(Date.now() < deadline, 'UI smoke runner must complete within 120 seconds');
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.equal(await vscode.env.clipboard.readText(), special.fsPath, 'Context menu must copy the exact unescaped path');

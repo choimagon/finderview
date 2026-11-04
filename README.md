@@ -17,6 +17,9 @@ VS Code 워크스페이스를 macOS Finder의 열 보기처럼 탐색하세요. 
 - **File details:** select a file to see its name, extension, size, and path. Office documents, PDFs, source files, and other file types appear in the list.
 - **Workspace visibility:** respects `files.exclude` and, when enabled, `explorer.excludeGitIgnore`. Dotfiles are shown by default; the toolbar can hide them. macOS hidden attributes do not hide items.
 - **Tools:** refresh, folder-first/name sorting, path copy, and reveal in Finder or your OS file manager.
+- **File management:** drag files or folders from your desktop to copy them into a column. Drag inside FinderView to move; hold Alt/Option or Ctrl to copy. Select multiple items with Cmd/Ctrl or Shift.
+- **Context menu:** move to a chosen workspace folder, rename files/folders, or move selected items to Trash. Toolbar buttons also add, move, and delete files.
+- **Name conflicts:** choose overwrite, save with another name, skip, or cancel. Existing targets are moved to Trash before replacement.
 - **Keyboard navigation:** Up/Down, Left/Right, Home/End, Enter, and Cmd/Ctrl+R to refresh.
 - **Workspace support:** multi-root selection, theme-aware colors, horizontal scrolling, and automatic refresh after file changes.
 
@@ -26,7 +29,11 @@ VS Code **1.95 or newer** is required. External apps must already be installed a
 
 External opening is available only for local files in a trusted workspace. macOS uses `open`, Linux uses `xdg-open`, and Windows uses `rundll32`. External opening and OS reveal are unavailable in remote workspaces. This release was tested on macOS; Windows, Linux, and remote workspaces have not been verified on devices.
 
-FinderView does not include an Office/PDF renderer. Opening inside VS Code depends on its installed viewers. It does not move, rename, delete, or overwrite files. Workspace-external symbolic links are blocked; remote symbolic links are restricted.
+FinderView does not include an Office/PDF renderer. Opening inside VS Code depends on its installed viewers. File changes require a trusted workspace. Deletion asks for confirmation and uses Trash; it does not fall back to permanent deletion. Move and rename operations update VS Code editor paths. Workspace roots cannot be moved, renamed, deleted, or replaced. Workspace-external symbolic links are blocked; remote symbolic links are restricted.
+
+Desktop drops copy file contents without modifying the original files. File and folder drops preserve empty items and transfer in chunks; each drop supports up to 1 GB and 10,000 entries. Transfers can finish some items before a filesystem error; completed work is reported. Moving with the folder picker is limited to folders inside the open workspace.
+
+폴더·파일을 우클릭하면 **이동 / 이름 변경 / 휴지통으로 이동**을 사용할 수 있습니다. 같은 이름이 있으면 **덮어쓰기 / 다른 이름으로 저장 / 건너뛰기 / 취소**를 선택합니다. 외부에서 드래그한 원본은 유지하며, FinderView 안에서 드래그하면 이동합니다.
 
 Columns have a fixed width of 220px. Sidebar mode, resizable columns, search, list virtualization, and VS Code file nesting are not included in this release.
 

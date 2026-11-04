@@ -1,3 +1,5 @@
+> 이 문서는 0.1.x 초기 구현 기록입니다. 현재 파일 관리 기능과 지원 범위는 루트 README 및 CHANGELOG를 참고하세요.
+
 # Column Explorer
 
 VS Code 워크스페이스를 macOS Finder 열 보기처럼 탐색하는 확장입니다. 파일 내용을 수정하는 기능은 없습니다.

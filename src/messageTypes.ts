@@ -26,9 +26,33 @@ export interface ExplorerState {
   showHidden: boolean;
   foldersFirst: boolean;
   busy: boolean;
+  operationBusy?: boolean;
   error?: string;
 }
+export interface OperationMessage {
+  type: "operation";
+  requestId: string;
+  action:
+    | "transfer"
+    | "move"
+    | "trash"
+    | "rename"
+    | "add"
+    | "upload-start"
+    | "upload-chunk"
+    | "upload-finish"
+    | "upload-cancel";
+  uris?: string[];
+  target?: string;
+  copy?: boolean;
+  uploadId?: string;
+  relativePath?: string;
+  data?: string;
+  offset?: number;
+  directory?: boolean;
+}
 export type ClientMessage =
+  | OperationMessage
   | { type: "ready" | "refresh" }
   | { type: "root"; uri: string }
   | { type: "select"; uri: string; column: number }

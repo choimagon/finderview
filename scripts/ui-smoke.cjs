@@ -4,7 +4,7 @@ const path = require('node:path');
 const { chromium } = require('playwright-core');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-module.exports = async function smoke(port, ready, done, externalLog) {
+module.exports = async function smoke(port, ready, done, externalLog, workspace) {
   let browser;
   try {
     const deadline = Date.now() + 45000;
@@ -77,6 +77,7 @@ module.exports = async function smoke(port, ready, done, externalLog) {
     await frame.waitForFunction(() => document.querySelector('.entry.selected .filename') && document.getElementById('metadata').textContent.includes('현재 문서.md'));
     assert.equal(await row('현재 문서.md').getAttribute('aria-selected'), 'true');
     await page.screenshot({ path: path.resolve(__dirname, '../artifacts/finderview-toolbar.png') });
+    await require('./management-smoke.cjs')(frame,page,workspace);
     console.log('PASS editor title FinderView icon: click opens existing explorer tab');
     console.log(`PASS real Webview UI: all file types, escaped names, 4 columns, empty folder, ancestor reset, metadata, hidden files, sorting, context menu, double-click dispatches external opening; context menu opens editor. Screenshot: ${artifact}`);
   } finally {

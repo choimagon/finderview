@@ -322,3 +322,33 @@ footer {
     padding-inline: 10px;
   }
 }
+
+.entry.multi-selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.entry[draggable="true"] {
+  cursor: default;
+}
+.drop-target {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: -2px;
+  background: var(--vscode-list-dropBackground) !important;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+#selection-count {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+#context hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 5px 0;
+}
+#context .danger {
+  color: var(--vscode-errorForeground);
+}

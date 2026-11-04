@@ -8,6 +8,12 @@
   let contextUri;
   let focusUri;
   let previousCount = 0;
+  let selectedUris = new Set();
+  let anchor;
+  let localBusy = false;
+  let operationSequence = 0;
+  const pending = new Map();
+  const dragMime = "application/x-finderview-uris";
   // Host updates replace rows between clicks. Track the URI rather than rely
   // on the browser's dblclick event, which requires the same DOM target.
   let lastClick;
@@ -20,6 +26,9 @@
   };
   const select = (entry, column) => {
     focusUri = entry.uri;
+    selectedUris = new Set([entry.uri]);
+    anchor = { uri: entry.uri, column };
+    updateSelection();
     post({ type: "select", uri: entry.uri, column });
   };
   const formatSize = (size) => {
@@ -37,6 +46,8 @@
   function showContext(event, uri) {
     event.preventDefault();
     contextUri = uri;
+    if (!selectedUris.has(uri)) selectedUris = new Set([uri]);
+    updateSelection();
     menu.hidden = false;
     menu.style.left = `${Math.max(4, Math.min(event.clientX, innerWidth - menu.offsetWidth - 4))}px`;
     menu.style.top = `${Math.max(4, Math.min(event.clientY, innerHeight - menu.offsetHeight - 4))}px`;
@@ -49,6 +60,34 @@
       (column) => column.querySelector(".entries")?.scrollTop || 0,
     );
     const horizontal = columns.scrollLeft;
+    const oldPath = state.columns
+      .map((column) => column.selected || "")
+      .join("\n");
+    const newPath = next.columns
+      .map((column) => column.selected || "")
+      .join("\n");
+    const visible = new Set(
+      next.columns.flatMap((column) =>
+        column.entries.map((entry) => entry.uri),
+      ),
+    );
+    if (state.root && state.root !== next.root) {
+      selectedUris.clear();
+      anchor = undefined;
+    }
+    selectedUris = new Set([...selectedUris].filter((uri) => visible.has(uri)));
+    if (
+      oldPath !== newPath &&
+      selectedUris.size <= 1 &&
+      !localBusy &&
+      !next.operationBusy
+    ) {
+      const current = next.columns
+        .map((column) => column.selected)
+        .filter(Boolean)
+        .at(-1);
+      if (current) selectedUris = new Set([current]);
+    }
     state = next;
     $("roots").replaceChildren(
       ...next.roots.map((root) => {
@@ -61,9 +100,12 @@
     $("roots").hidden = next.roots.length < 2;
     $("hidden").checked = !!next.showHidden;
     $("sort").value = next.foldersFirst ? "folders" : "name";
-    $("activity").textContent = next.busy
-      ? "불러오는 중…"
-      : `${next.columns.length}개 열`;
+    $("activity").textContent =
+      next.operationBusy || localBusy
+        ? "파일 작업 중…"
+        : next.busy
+          ? "불러오는 중…"
+          : `${next.columns.length}개 열`;
     columns.setAttribute("aria-busy", String(!!next.busy));
     $("error").hidden = !next.error;
     $("error").textContent = next.error || "";
@@ -89,6 +131,9 @@
       const list = node("div", "entries");
       list.setAttribute("role", "listbox");
       list.setAttribute("aria-label", column.name);
+      list.setAttribute("aria-multiselectable", "true");
+      installDropTarget(list, column.uri);
+      installDropTarget(header, column.uri);
       if (!column.entries.length)
         list.append(
           node(
@@ -103,6 +148,7 @@
           `entry${column.selected === entry.uri ? " selected" : ""}`,
         );
         button.type = "button";
+        button.draggable = true;
         button.dataset.uri = entry.uri;
         button.setAttribute("role", "option");
         button.setAttribute(
@@ -128,6 +174,11 @@
         button.append(icon, node("span", "filename", entry.name));
         if (entry.directory) button.append(node("span", "arrow", "›"));
         button.addEventListener("click", (event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey) {
+            lastClick = undefined;
+            multiSelect(entry, index, event);
+            return;
+          }
           const now = Date.now();
           const doubleClick =
             event.detail !== 0 &&
@@ -141,6 +192,29 @@
             post({ type: "external", uri: entry.uri });
           else select(entry, index);
         });
+        button.addEventListener("dragstart", (event) => {
+          if (state.operationBusy || localBusy) {
+            event.preventDefault();
+            return;
+          }
+          lastClick = undefined;
+          if (!selectedUris.has(entry.uri)) selectedUris = new Set([entry.uri]);
+          updateSelection();
+          event.dataTransfer.effectAllowed = "copyMove";
+          event.dataTransfer.setData(
+            dragMime,
+            JSON.stringify([...selectedUris]),
+          );
+          event.dataTransfer.setData(
+            "text/uri-list",
+            [...selectedUris].join("\r\n"),
+          );
+        });
+        button.addEventListener("dragend", () => {
+          lastClick = undefined;
+          clearDropHighlights();
+        });
+        if (entry.directory) installDropTarget(button, entry.uri);
         button.addEventListener("contextmenu", (event) =>
           showContext(event, entry.uri),
         );
@@ -188,6 +262,270 @@
         inline: "end",
       });
     previousCount = next.columns.length;
+    updateSelection();
+  }
+  function currentDirectory() {
+    return state.columns.at(-1)?.uri;
+  }
+  function showError(error) {
+    $("error").hidden = false;
+    $("error").textContent =
+      error instanceof Error ? error.message : String(error);
+  }
+  function updateSelection() {
+    const busy = !!state.operationBusy || localBusy;
+    columns.setAttribute("aria-busy", String(!!state.busy || busy));
+    if (!busy)
+      $("activity").textContent = state.busy
+        ? "불러오는 중…"
+        : `${state.columns.length}개 열`;
+    else if (!$("activity").textContent.startsWith("파일 추가 "))
+      $("activity").textContent = "파일 작업 중…";
+    $("selection-count").textContent = selectedUris.size
+      ? `${selectedUris.size}개 선택`
+      : "";
+    $("add-files").disabled = busy || !currentDirectory();
+    $("move-files").disabled = busy || !selectedUris.size;
+    $("trash-files").disabled = busy || !selectedUris.size;
+    for (const button of menu.querySelectorAll("button")) {
+      if (["move", "rename", "trash"].includes(button.dataset.action))
+        button.disabled = busy;
+    }
+    for (const row of columns.querySelectorAll(".entry")) {
+      row.className = row.className.replace(/\s*multi-selected\b/g, "");
+      if (selectedUris.has(row.dataset.uri))
+        row.classList.add("multi-selected");
+      row.setAttribute(
+        "aria-selected",
+        String(
+          selectedUris.has(row.dataset.uri) ||
+            row.classList.contains("selected"),
+        ),
+      );
+    }
+  }
+  function multiSelect(entry, column, event) {
+    const entries = state.columns[column].entries;
+    if (!anchor || anchor.column !== column) {
+      selectedUris.clear();
+      anchor = { uri: entry.uri, column };
+    }
+    if (event.shiftKey) {
+      const start = entries.findIndex((item) => item.uri === anchor.uri);
+      const end = entries.findIndex((item) => item.uri === entry.uri);
+      selectedUris = new Set(
+        entries
+          .slice(Math.min(Math.max(start, 0), end), Math.max(start, end) + 1)
+          .map((item) => item.uri),
+      );
+    } else if (selectedUris.has(entry.uri)) selectedUris.delete(entry.uri);
+    else selectedUris.add(entry.uri);
+    focusUri = entry.uri;
+    updateSelection();
+  }
+  function requestOperation(action, values = {}) {
+    const requestId = `file-${Date.now()}-${++operationSequence}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(requestId);
+        reject(
+          new Error(
+            "파일 작업 응답이 지연되고 있습니다. 작업 결과를 확인한 뒤 새로고침하세요.",
+          ),
+        );
+      }, 600000);
+      pending.set(requestId, { resolve, reject, timer });
+      post({ type: "operation", requestId, action, ...values });
+    });
+  }
+  async function perform(action, values) {
+    if (state.operationBusy || localBusy) return;
+    if (action !== "add" && !values.uris?.length) {
+      showError("파일 또는 폴더를 선택하세요.");
+      return;
+    }
+    localBusy = true;
+    updateSelection();
+    try {
+      await requestOperation(action, values);
+    } catch (error) {
+      showError(error);
+    } finally {
+      localBusy = false;
+      updateSelection();
+    }
+  }
+  function clearDropHighlights() {
+    for (const target of columns.querySelectorAll(".drop-target"))
+      target.className = target.className.replace(/\s*drop-target\b/g, "");
+  }
+  function installDropTarget(element, target) {
+    element.addEventListener("dragover", (event) => {
+      if (state.operationBusy || localBusy) return;
+      const types = Array.from(event.dataTransfer?.types || []);
+      if (
+        !types.some((type) =>
+          [dragMime, "Files", "text/uri-list"].includes(type),
+        )
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = types.includes(dragMime)
+        ? event.altKey || event.ctrlKey
+          ? "copy"
+          : "move"
+        : "copy";
+      clearDropHighlights();
+      element.classList.add("drop-target");
+    });
+    element.addEventListener("dragleave", (event) => {
+      if (!element.contains?.(event.relatedTarget))
+        element.className = element.className.replace(/\s*drop-target\b/g, "");
+    });
+    element.addEventListener("drop", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearDropHighlights();
+      if (state.operationBusy || localBusy) return;
+      const destination = typeof target === "function" ? target() : target;
+      if (!destination) {
+        showError("먼저 파일을 넣을 폴더를 여세요.");
+        return;
+      }
+      const transfer = event.dataTransfer;
+      const internal = transfer?.getData(dragMime);
+      if (internal) {
+        try {
+          const uris = JSON.parse(internal);
+          if (
+            !Array.isArray(uris) ||
+            uris.some((uri) => typeof uri !== "string")
+          )
+            throw new Error("드래그한 경로가 올바르지 않습니다.");
+          void perform("transfer", {
+            uris,
+            target: destination,
+            copy: !!(event.altKey || event.ctrlKey),
+          });
+        } catch (error) {
+          showError(error);
+        }
+        return;
+      }
+      // Read user-provided File objects, never local filesystem paths.
+      const items = Array.from(transfer?.items || []).filter(
+        (item) => item.kind === "file",
+      );
+      const roots = items
+        .map((item) => item.webkitGetAsEntry?.())
+        .filter(Boolean);
+      const files = Array.from(transfer?.files || []);
+      if (roots.length || files.length) {
+        void importDrop(destination, roots, files);
+        return;
+      }
+      const uris = (transfer?.getData("text/uri-list") || "")
+        .split(/\r?\n/)
+        .filter((line) => line && !line.startsWith("#"));
+      if (uris.length)
+        void perform("transfer", { uris, target: destination, copy: true });
+      else
+        showError(
+          "이 항목을 가져올 수 없습니다. 파일 추가 버튼으로 선택하세요.",
+        );
+    });
+  }
+  async function* walkDrop(entry, prefix = "") {
+    const relativePath = prefix + entry.name;
+    if (entry.isFile) {
+      const file = await new Promise((resolve, reject) =>
+        entry.file(resolve, reject),
+      );
+      yield { relativePath, file };
+    } else if (entry.isDirectory) {
+      yield { relativePath, directory: true };
+      const reader = entry.createReader();
+      while (true) {
+        const entries = await new Promise((resolve, reject) =>
+          reader.readEntries(resolve, reject),
+        );
+        if (!entries.length) break;
+        for (const child of entries) yield* walkDrop(child, relativePath + "/");
+      }
+    }
+  }
+  function base64(bytes) {
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 8192)
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+    return btoa(binary);
+  }
+  async function importDrop(target, roots, files) {
+    if (state.operationBusy || localBusy) return;
+    localBusy = true;
+    updateSelection();
+    let uploadId;
+    try {
+      const entries = [];
+      let total = 0;
+      const add = (entry) => {
+        if (entries.length >= 10000)
+          throw new Error("한 번에 추가할 수 있는 항목 수는 10,000개입니다.");
+        total += entry.file?.size || 0;
+        if (total > 1024 * 1024 * 1024)
+          throw new Error("한 번에 추가할 수 있는 파일 총 크기는 1GB입니다.");
+        entries.push(entry);
+      };
+      if (roots.length) {
+        for (const root of roots)
+          for await (const entry of walkDrop(root)) add(entry);
+      } else for (const file of files) add({ relativePath: file.name, file });
+      ({ uploadId } = await requestOperation("upload-start", { target }));
+      let completed = 0;
+      for (const entry of entries) {
+        if (entry.directory)
+          await requestOperation("upload-chunk", {
+            uploadId,
+            relativePath: entry.relativePath,
+            directory: true,
+          });
+        else {
+          const file = entry.file;
+          if (!file.size)
+            await requestOperation("upload-chunk", {
+              uploadId,
+              relativePath: entry.relativePath,
+              data: "",
+              offset: 0,
+            });
+          for (let offset = 0; offset < file.size; offset += 512 * 1024) {
+            const data = base64(
+              new Uint8Array(
+                await file.slice(offset, offset + 512 * 1024).arrayBuffer(),
+              ),
+            );
+            await requestOperation("upload-chunk", {
+              uploadId,
+              relativePath: entry.relativePath,
+              data,
+              offset,
+            });
+          }
+        }
+        completed++;
+        $("activity").textContent = `파일 추가 ${completed}/${entries.length}`;
+      }
+      await requestOperation("upload-finish", { uploadId });
+      uploadId = undefined;
+    } catch (error) {
+      if (uploadId)
+        await requestOperation("upload-cancel", { uploadId }).catch(() => {});
+      showError(error);
+    } finally {
+      localBusy = false;
+      updateSelection();
+    }
   }
   function findRow(uri) {
     return [...columns.querySelectorAll(".entry")].find(
@@ -197,6 +535,27 @@
   function handleKey(event, entry, index) {
     const entries = state.columns[index].entries;
     const position = entries.findIndex((item) => item.uri === entry.uri);
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      selectedUris = new Set(entries.map((item) => item.uri));
+      anchor = { uri: entry.uri, column: index };
+      updateSelection();
+      return;
+    }
+    if (
+      event.key === "Delete" ||
+      (event.metaKey && event.key === "Backspace")
+    ) {
+      event.preventDefault();
+      if (!selectedUris.has(entry.uri)) selectedUris = new Set([entry.uri]);
+      void perform("trash", { uris: [...selectedUris] });
+      return;
+    }
+    if (event.key === "F2") {
+      event.preventDefault();
+      void perform("rename", { uris: [entry.uri] });
+      return;
+    }
     let target;
     if (event.key === "ArrowDown")
       target = entries[Math.min(position + 1, entries.length - 1)];
@@ -206,7 +565,8 @@
     if (target) {
       event.preventDefault();
       findRow(target.uri)?.focus();
-      select(target, index);
+      if (event.shiftKey) multiSelect(target, index, event);
+      else select(target, index);
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
@@ -242,10 +602,23 @@
       );
     }
   }
+  installDropTarget(columns, () => currentDirectory());
   $("roots").addEventListener("change", (event) =>
     post({ type: "root", uri: event.target.value }),
   );
   $("refresh").addEventListener("click", () => post({ type: "refresh" }));
+  $("add-files").addEventListener(
+    "click",
+    () => void perform("add", { target: currentDirectory() }),
+  );
+  $("move-files").addEventListener(
+    "click",
+    () => void perform("move", { uris: [...selectedUris] }),
+  );
+  $("trash-files").addEventListener(
+    "click",
+    () => void perform("trash", { uris: [...selectedUris] }),
+  );
   const options = () =>
     post({
       type: "options",
@@ -256,7 +629,17 @@
   $("sort").addEventListener("change", options);
   menu.addEventListener("click", (event) => {
     const action = event.target.dataset.action;
-    if (action && contextUri) post({ type: action, uri: contextUri });
+    if (action && contextUri) {
+      if (["move", "trash", "rename"].includes(action)) {
+        const uris =
+          action === "rename"
+            ? [contextUri]
+            : selectedUris.has(contextUri)
+              ? [...selectedUris]
+              : [contextUri];
+        void perform(action, { uris });
+      } else post({ type: action, uri: contextUri });
+    }
     menu.hidden = true;
   });
   document.addEventListener("pointerdown", (event) => {
@@ -286,6 +669,17 @@
   });
   window.addEventListener("message", (event) => {
     if (event.data?.type === "state") render(event.data);
+    else if (event.data?.type === "operationResult") {
+      const request = pending.get(event.data.requestId);
+      if (!request) return;
+      pending.delete(event.data.requestId);
+      clearTimeout(request.timer);
+      if (event.data.ok) request.resolve(event.data);
+      else
+        request.reject(
+          new Error(event.data.error || "파일 작업에 실패했습니다."),
+        );
+    }
   });
   post({ type: "ready" });
 })();
