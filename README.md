@@ -44,3 +44,7 @@ Press F5 in the source project to launch the Extension Development Host, then ru
 ## License
 
 MIT
+
+## Distribution / 배포
+
+[배포 폴더](distribution/README.md)에 설치용 VSIX, 게시자 로고, Marketplace 업로드 및 업데이트 방법을 보관합니다.
