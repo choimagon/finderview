@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+
+- Rename the OS file-manager context action to “Finder / 파일 탐색기에서 열기”.
+
 ## 0.2.3
 
 - Increase the FinderView header to 20px with an extra-bold font weight.

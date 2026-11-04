@@ -170,7 +170,7 @@ export class ExplorerProvider implements vscode.Disposable {
             );
           else {
             if (uri.scheme !== "file" || vscode.env.remoteName)
-              throw new Error("Finder에서 표시는 로컬 파일만 지원합니다.");
+              throw new Error("Finder / 파일 탐색기에서 열기는 로컬 파일만 지원합니다.");
             await vscode.commands.executeCommand("revealFileInOS", uri);
           }
           break;
